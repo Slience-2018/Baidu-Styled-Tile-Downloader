@@ -5,6 +5,14 @@ A Tool for downloading Baidu raster tile according to specific bmap style based 
 
 一款基于中国行政区划，根据特定百度地图样式生成栅格瓦片合成图的工具。
 
+## 功能特性
+- 支持可配置图片格式（默认PNG，支持JPG等）
+- 基于中国行政区划下载地图瓦片
+- 支持多种地图样式自定义
+- 自动合成瓦片为完整地图
+- 支持绘制行政边界
+- 支持遥感影像下载
+
 <!-- MarkdownTOC autolink='true' autoanchor='true' -->
 
 - [依赖](#%E4%BE%9D%E8%B5%96)
@@ -26,6 +34,7 @@ A Tool for downloading Baidu raster tile according to specific bmap style based 
 - 图片合成：pillow
 - 瓦片请求：requests
 - 多边形绘制：opencv-python + numpy
+- 坐标转换：内置坐标系转换工具
 
 <a id="%E7%94%A8%E6%B3%95"></a>
 ## 用法
@@ -45,17 +54,19 @@ pip install -r requirements.txt
 |:--|:--|:--|
 |TARGET_TYPE|栅格类型|0表示个性地图；1表示遥感影像|
 |MY_STYLE|地图样式|说明见[style example](#style-example)|
-|TARGET_NAME|目标行政区划名称，需要带上省市区县|北京市朝阳区|
-|TARGET_CODE|目标行政区划区号，6位|110105|
-|TARGET_LEVEL|目标地图级别|不同要素可视级别不同，详见[style example](#style-example)|
+|TARGET_NAME|目标行政区划名称|北京市|
+|TARGET_CODE|目标行政区划区号，6位|110000|
+|TARGET_LEVEL|目标地图级别|推荐15级（城市街道级详细信息）|
 |TARGET_OBJECT|目标突出要素|用于命名输出文件夹，指瓦片style中突出的要素，无则填''|
 |ROOT_DIR|输出根目录|无|
-|B_isDraw|是否绘制行政边界|True/False|
-|B_style|行政边界的样式对象|{'color': (0,255,0),'thick': 2}|
+|IMAGE_FORMAT|图片保存格式|默认'png'，支持'jpg'等|
+|B_ISDRAW|是否绘制行政边界|True/False|
+|B_STYLE|行政边界的样式对象|{'color': (0,255,0),'thick': 2}|
 |SAVE_TILE|是否保留瓦片文件夹|默认True|
 |AUTO_LEVEL|爬遥感影像时level是否由系统决定|默认False|
 |RECT_OR_DISTRICT|按矩形范围还是行政区划爬取瓦片|0表示矩形；1表示行政区划|
 |RECT_BOX|矩形范围（Wgs84坐标系）|[(西南角经度,西南角纬度),(东北角经度,东北角纬度)]|
+|MERGE_TO_MAP|是否启用瓦片合成功能|默认True|
 
 > 步骤三：运行__init__.py文件
 
@@ -66,7 +77,7 @@ python __init__.py
 <a id="%E6%95%88%E6%9E%9C"></a>
 ## 效果
 
-以北京市朝阳区为例
+以北京市为例
 
 <a id="rs"></a>
 ### RS
@@ -92,6 +103,8 @@ python __init__.py
 ### water
 
 <img src="./example/北京市朝阳区_水体_15/result.jpg" width="400">
+
+> 注意：示例图片可能仍为.jpg格式，实际生成的文件格式由IMAGE_FORMAT配置项决定
 
 <a id="style-example"></a>
 ## style example

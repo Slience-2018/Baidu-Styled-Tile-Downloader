@@ -2,6 +2,7 @@
 
 import cv2
 import numpy as np
+import os
 
 # 绘制行政边界
 def drawPoly(picPath, pts, style):
@@ -13,4 +14,6 @@ def drawPoly(picPath, pts, style):
 		p = np.array(poly, np.int32) 
 		p = p.reshape((-1, 1, 2)) 
 		img = cv2.polylines(img, [p], isClosed, color, thickness)
-	cv2.imencode('.jpg', img)[1].tofile(picPath)
+	# 根据文件扩展名确定编码格式
+	extension = os.path.splitext(picPath)[1].lower()
+	cv2.imencode(extension, img)[1].tofile(picPath)

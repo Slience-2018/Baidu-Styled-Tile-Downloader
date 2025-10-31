@@ -19,6 +19,8 @@ if __name__ == '__main__':
 		drawBoundary = B_ISDRAW,
 		boundaryStyle = B_STYLE,
 		rectorDist = RECT_OR_DISTRICT,
-		rectBox = RECT_BOX)
+		rectBox = RECT_BOX,
+		mergeToMap = MERGE_TO_MAP,
+		image_format = IMAGE_FORMAT)
 
 	TD.run()

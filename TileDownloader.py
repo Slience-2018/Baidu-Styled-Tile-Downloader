@@ -37,7 +37,7 @@ class  TileDownloader(object):
 		adCode = None, adName = None, rectBox = [(0,0),(0,0)], \
 		dir_path = './', target = '' , level = 15, \
 		levelControl = False, scale = 1, drawBoundary = False, \
-		boundaryStyle = {}, saveTile = True):
+		boundaryStyle = {}, saveTile = True, mergeToMap = True, image_format = 'png'):
 		super( TileDownloader, self).__init__()
 		self.type = type
 		self.style = style
@@ -53,10 +53,12 @@ class  TileDownloader(object):
 		self.b_style = boundaryStyle
 		self.tile_list = []
 		self.saveTile = saveTile
+		self.mergeToMap = mergeToMap
 		self.Task = Queue()
 		self.thread_pool = []
 		self.target_obj = target
 		self.THREAD_MAX = 2
+		self.image_format = image_format.lower()  # 转换为小写以确保一致性
 
 	# 启动爬虫
 	def run(self):
@@ -110,9 +112,13 @@ class  TileDownloader(object):
 			print('-----瓦片爬取完毕-----')
 
 
-		print('-----图片开始合成-----')
-		self.generatePic()
-		print('-----图片合成完毕-----')
+		# 根据配置决定是否合成地图
+		if self.mergeToMap:
+			print('-----图片开始合成-----')
+			self.generatePic()
+			print('-----图片合成完毕-----')
+		else:
+			print('-----跳过地图合成，仅下载瓦片-----')
 
 
 		if self.isDraw:
@@ -123,7 +129,7 @@ class  TileDownloader(object):
 			elif self.rectOrDist == 1:
 				polys = RegionToPixels(self.region['features'][0]['geometry']['coordinates'],self.level,self.swTile,self.neTile)
 			print('-----绘制边界-----')
-			drawPoly(self.dir + 'result.jpg', polys, self.b_style)
+			drawPoly(self.dir + f'result.{self.image_format}', polys, self.b_style)
 			print('-----边界绘制完毕-----')
 
 
@@ -171,7 +177,7 @@ class  TileDownloader(object):
 		t = time.localtime()
 		with open(self.dir + 'log.txt', 'a', encoding='utf-8') as file:
 			if self.rectOrDist == 1:
-				file.write(self.adName + '.jpg信息:\n')
+				file.write(f'{self.adName}.{self.image_format}信息:\n')
 			file.write('目标突出要素：' + self.target_obj + '\n')
 			file.write('时间：' + '.'.join([str(t.tm_year),str(t.tm_mon),str(t.tm_mday)]) + ' ' + ':'.join([str(t.tm_hour),str(t.tm_min),str(t.tm_sec)]) + '\n')
 			file.write('等级：' + str(self.level) + '\n')
@@ -187,22 +193,27 @@ class  TileDownloader(object):
 	# 图片生成
 	def generatePic(self):
 		res = Image.new('RGB', (256*(self.neTile[0]-self.swTile[0]+1), 256*(self.neTile[1]-self.swTile[1]+1)))
-		for fn in os.listdir(self.dir + 'tiles/'):
-			if fn.endswith('.jpg'):
-				try:
-					im = Image.open(self.dir + 'tiles/' + fn)
-					[x, y] = fn.split('.')[0].split('_')
-					res.paste(im, box=((int(x)-self.swTile[0])*256,(self.neTile[1]-int(y))*256))
-				except:
-					pass
+		z_dir = self.dir + 'tiles/' + str(self.level) + '/'
+		
+		# 按照瓦片坐标范围遍历并合成图片
+		for x in range(self.swTile[0], self.neTile[0] + 1):
+			for y in range(self.swTile[1], self.neTile[1] + 1):
+				tile_path = z_dir + str(x) + '/' + str(y) + f'.{self.image_format}'
+				if os.path.exists(tile_path):
+					try:
+						im = Image.open(tile_path)
+						res.paste(im, box=((x-self.swTile[0])*256, (self.neTile[1]-y)*256))
+					except Exception as e:
+						print(f'Error processing tile {x}_{y}: {e}')
+						pass
 		# 保存图片
-		res.save(self.dir + 'result.jpg')
+		res.save(self.dir + f'result.{self.image_format}')
+		
 		# 无需保留瓦片，则清空
 		if not self.saveTile:
-			ts = os.listdir(self.dir+'tiles/')
-			for t in ts:
-				os.remove(self.dir+'tiles/' + t)
-			os.rmdir(self.dir+'tiles/')
+			import shutil
+			shutil.rmtree(self.dir + 'tiles/')
+			os.makedirs(self.dir + 'tiles/')  # 重建空的tiles目录
 
 	# 检查文件夹路径，返回True，需要下载瓦片，返回False，不需要下载瓦片
 	def checkParms(self):
@@ -216,24 +227,51 @@ class  TileDownloader(object):
 		if(not self.dir[-1:]=='/'):
 			self.dir = self.dir + '/' + '_'.join([self.adName if self.adName is not None else '',self.target_obj,str(self.level)]) + '/'
 
+		# 创建主目录
 		if(not os.path.exists(self.dir)):
 			try:
 				os.makedirs(self.dir)
 			except:
 				raise Exception("文件夹路径格式错误或非文件夹")
+			
+			# 如果是新创建的目录，需要下载瓦片
+			need_download = True
 		else:
-			if(not os.path.exists(self.dir + 'tiles/')):
-				try:
-					os.makedirs(self.dir + 'tiles/')
-				except:
-					raise Exception("文件夹路径格式错误或非文件夹")
-			ts = os.listdir(self.dir+'tiles/')
-			if len(ts) != len(self.tile_list):
-				for t in ts:
-					os.remove(self.dir+'tiles/' + t)
-			else:# 瓦片已经下载过了，不用重新下
-				return False
-		return True
+			# 目录已存在，检查瓦片情况
+			need_download = True
+
+		# 创建tiles目录和目录结构
+		tile_dir = self.dir + 'tiles/'
+		if(not os.path.exists(tile_dir)):
+			try:
+				os.makedirs(tile_dir)
+			except:
+				raise Exception("文件夹路径格式错误或非文件夹")
+			
+		# 创建z/x的目录结构
+		z_dir = tile_dir + str(self.level) + '/'
+		if(not os.path.exists(z_dir)):
+			os.makedirs(z_dir)
+		else:
+			# 检查是否需要重新下载瓦片
+			# 计算已下载的瓦片数量
+			downloaded_count = 0
+			for x in range(self.swTile[0], self.neTile[0] + 1):
+				x_dir = z_dir + str(x) + '/'
+				if os.path.exists(x_dir):
+					for y in range(self.swTile[1], self.neTile[1] + 1):
+						if os.path.exists(x_dir + str(y) + f'.{self.image_format}'):
+							downloaded_count += 1
+			if downloaded_count == len(self.tile_list):
+				need_download = False
+			else:
+				# 清空已有的瓦片目录
+				import shutil
+				shutil.rmtree(z_dir)
+				os.makedirs(z_dir)
+				need_download = True
+				
+		return need_download
 
 	# 获取当前时间，格式 yyyymmdd
 	def getTime(self):
@@ -248,16 +286,52 @@ class  TileDownloader(object):
 		while (not self.Task.empty()):
 			params = self.Task.get()
 			if self.type == 0:
-				target_url = 'https://api.map.baidu.com/customimage/tile/'
+				# 使用用户提供的正确百度地图瓦片URL格式
+				target_url = 'https://maponline0.bdimg.com/tile/'
+				# 添加必要的参数
+				tile_params = {
+					'qt': 'vtile',
+					'x': params['x'],
+					'y': params['y'],
+					'z': params['z'],
+					'styles': 'pl',
+					'udt': self.time,  # 使用已生成的当前日期
+					'scaler': 1,
+					'showtext': 1
+				}
 			else:
-				target_url = 'https://maponline'+str(random.choice([1,2,3]))+'.bdimg.com/starpic/'
+				# 保留遥感影像URL
+				x, y, z = params['x'], params['y'], params['z']
+				target_url = f'https://shangetu{random.choice([1,2,3])}.map.bdimg.com/it/u=x={x};y={y};z={z};v=009;type=sate&fm=46'
 			try:
-				html = requests.get(url=target_url, params=params, timeout=5)
-				with open(self.dir + 'tiles/' + str(params['x']) + '_' + str(params['y']) +'.jpg', 'wb') as file:
-					file.write(html.content)
-					file.close()
-				print(str(params['x']),str(params['y']),'finish','剩余task:',str(self.Task.qsize()))
-			except:
+				if self.type == 0:
+					# 对于个性地图，使用正确的参数
+					html = requests.get(url=target_url, params=tile_params, timeout=5)
+				else:
+					# 对于遥感影像，直接使用构造好的URL
+					html = requests.get(url=target_url, timeout=5)
+				
+				# 检查响应状态
+				if html.status_code == 200:
+					# 按百度地图离线JS格式创建目录结构：tiles/z/x/y.jpg
+					x = params['x']
+					y = params['y']
+					z = self.level
+					z_dir = self.dir + 'tiles/' + str(z) + '/'
+					x_dir = z_dir + str(x) + '/'
+					
+					# 创建x目录
+					if not os.path.exists(x_dir):
+						os.makedirs(x_dir)
+						
+					with open(x_dir + str(y) + f'.{self.image_format}', 'wb') as file:
+							file.write(html.content)
+					print(str(x), str(y), 'finish', '剩余task:', str(self.Task.qsize()))
+				else:
+					print(f'Failed to download tile: HTTP {html.status_code}')
+					self.Task.put(params)
+			except Exception as e:
+				print(f'Error downloading tile: {e}')
 				self.Task.put(params)
 		
 	# 获取所有待爬瓦片号
